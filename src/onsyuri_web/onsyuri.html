@@ -216,7 +216,7 @@
             async function fsapi_walk(handle, par, arr) {
                 for await (const [name, entry] of handle.entries()) {
                     if (entry instanceof FileSystemDirectoryHandle) {
-                        fsapi_walk(entry, `${par}${name}/`, arr);
+                        await fsapi_walk(entry, `${par}${name}/`, arr);
                     } else if (entry instanceof FileSystemFileHandle) {
                         const file = await entry.getFile();
                         const buffer = await file.arrayBuffer();
