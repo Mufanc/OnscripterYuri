@@ -44,10 +44,8 @@
             };
 
             async function load_json(url) {
-                return new Promise((res)=>{
-                    fetch(url).then((res)=>res.json())
-                    .then((json)=>(res(json)));
-                })
+                const resp = await fetch(url)
+                return resp.status == 404 ? null : await resp.json()
             }
 
             async function load_js(url) {
@@ -95,8 +93,10 @@
                     var filedir = path.substring(0, j);
                     var basedir = gamedir + "/" + filedir;
                     if(basedir[basedir.length-1]!="/") basedir+="/";
-                    if(url==undefined) url = urlbase + "/" + path;
-                    else if (url.length==0) url = urlbase + "/" + path;
+                    if (typeof url === 'string') {
+                        if(url==undefined) url = urlbase + "/" + path;
+                        else if (url.length==0) url = urlbase + "/" + path;
+                    }
                     
                     // console.log(path, url, file_lazyload);
                     em_mkdirs(_FS, basedir);
@@ -212,10 +212,51 @@
             g_onsyuri_module.onRuntimeInitialized = () => {
                 console.log("## onsyuri: onRuntimeInitialized");
             };
-            
-            (async() => {
+
+            async function fsapi_walk(handle, par, arr) {
+                for await (const [name, entry] of handle.entries()) {
+                    if (entry instanceof FileSystemDirectoryHandle) {
+                        fsapi_walk(entry, `${par}${name}/`, arr);
+                    } else if (entry instanceof FileSystemFileHandle) {
+                        const file = await entry.getFile();
+                        const buffer = await file.arrayBuffer();
+                        arr.push({
+                            path: `${par}${name}`,
+                            url: new Uint8Array(buffer)
+                        })
+                    }
+                }
+            }
+
+            async function choose_folder() {
+                const handle = await window.showDirectoryPicker();
+                const files = []
+
+                await fsapi_walk(handle, '', files);
+
+                const onsyuri_index = {
+                    title: 'Game',
+                    gamedir: `/onsyuri/${handle.name}`,
+                    savedir: `/onsyuri_save/${handle.name}`,
+                    args: [],
+                    lazyload: false,
+                    files
+                };
+
+                main(onsyuri_index);
+            }
+
+            async function main(onsyuri_index) {
                 //return
-                g_onsyuri_index = await load_json(ONSYURI_INDEX_URL);
+                g_onsyuri_index = onsyuri_index;
+
+                if (g_onsyuri_index == null) {
+                    // await new Promise((resolve) => setTimeout(resolve, 1000));
+                    document.querySelector('.loading').classList.add('hide');
+                    document.querySelector('.load-failed').classList.remove('hide');
+                    return;
+                }
+
                 await load_js(ONSYURI_JS_URL); // dynamic load onsyuri.js
                 await onsyuri(g_onsyuri_module);
 
@@ -227,7 +268,9 @@
                 args = args.concat(g_onsyuri_index.args);
                 console.log("## onsyuri: args", args);
                 g_onsyuri_module.callMain(args);
-            })();
+            }
+            
+            (async () => main(await load_json(ONSYURI_INDEX_URL)))();
         </script>
 
         <script type="text/javascript"> // onsyuri ui
@@ -386,6 +429,10 @@
                 margin-right: 10%;
             }
 
+            #onsyuri_webinfo .hide {
+                display: none;
+            }
+
             #onsyuri_webrmenu {
                 position: fixed; 
                 display: block;
@@ -418,7 +465,8 @@
         </style>
         
         <div id="onsyuri_webinfo">
-            <p> Loading game resources ... </p>
+            <p class="loading"> Loading game resources ... </p>
+            <p class="load-failed hide"> Failed to load resources! <a onclick="choose_folder()" href="#">Choose Folder</a> </p>
             <p> Powered by <a href="https://github.com/YuriSizuku/OnscripterYuri" target="_blank"> Onscripter Yuri</a> v0.6.4</p>
             <hr>
             <p> [Right|Long Click|F9]: show menu </p>
